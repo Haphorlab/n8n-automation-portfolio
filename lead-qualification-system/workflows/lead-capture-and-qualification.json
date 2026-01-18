@@ -1,0 +1,485 @@
+{
+  "name": "Lead Capture and Qualification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-capture",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-48, 24],
+      "id": "4b8ed8b1-6b74-455a-ad47-16f52a4f5458",
+      "name": "Webhook",
+      "webhookId": "WEBHOOK_ID_PLACEHOLDER"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ec554c80-566a-48ac-b0d8-96ff6501b30a",
+              "name": "email",
+              "value": "={{ $json.body.email }}",
+              "type": "string"
+            },
+            {
+              "id": "ba70ba12-9740-4fee-895e-a5a29758c550",
+              "name": "full name",
+              "value": "={{ $json.body.name }}",
+              "type": "string"
+            },
+            {
+              "id": "cc2800bc-a574-47b5-8e74-f677855cbf65",
+              "name": "company",
+              "value": "={{ $json.body.company }}",
+              "type": "string"
+            },
+            {
+              "id": "5c7766e0-5888-48b8-9015-456be5c0aa52",
+              "name": "phone",
+              "value": "={{ $json.body.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "47511d25-0a9d-4ceb-83cf-783275c5a18a",
+              "name": "source",
+              "value": "={{ $json.body.source }}",
+              "type": "string"
+            },
+            {
+              "id": "4fb43387-7cba-453f-8a93-dcc37cbb2286",
+              "name": "status",
+              "value": "new",
+              "type": "string"
+            },
+            {
+              "id": "a18a7cd2-e424-4b3a-9337-02fd26334213",
+              "name": "capturedAT",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [176, 24],
+      "id": "0caecccf-01a6-4614-8261-cdc77ee6c5e1",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "url": "https://api.hunter.io/v2/email-verifier",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            },
+            {
+              "name": "api_key",
+              "value": "YOUR_HUNTER_IO_API_KEY"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.3,
+      "position": [400, 24],
+      "id": "464f5d56-d08e-4077-8c0b-6bec6851f24d",
+      "name": "HTTP Request - Email Verification"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "df191007-9f2d-4699-84c2-c292650706cc",
+              "name": "jobTitle",
+              "value": "VP of Sales",
+              "type": "string"
+            },
+            {
+              "id": "ec8b93a6-f435-40ea-9621-b91001478d45",
+              "name": "company size",
+              "value": "500",
+              "type": "string"
+            },
+            {
+              "id": "1c259737-7c63-4816-8ea0-d1b214210c77",
+              "name": "industry",
+              "value": "Technology",
+              "type": "string"
+            },
+            {
+              "id": "c2f8bba6-785a-4864-860e-ccf184ca2fea",
+              "name": "revenue",
+              "value": "$10M",
+              "type": "string"
+            },
+            {
+              "id": "74a51b5c-0a5d-423c-89e6-2233fd3975d7",
+              "name": "emailScore",
+              "value": "={{ $node[\"HTTP Request - Email Verification\"].json.data.score }}",
+              "type": "string"
+            },
+            {
+              "id": "481c6653-36f9-47f1-a639-7f567f90d996",
+              "name": "email",
+              "value": "={{ $json.data.email }}",
+              "type": "string"
+            },
+            {
+              "id": "37a7a76a-b10b-4a3e-9e51-44eb0749e1ee",
+              "name": "full name",
+              "value": "={{ $('Edit Fields').item.json['full name'] }}",
+              "type": "string"
+            },
+            {
+              "id": "5ec17ad3-221d-43bc-a06c-400304ea7f15",
+              "name": "company",
+              "value": "={{ $('Edit Fields').item.json.company }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [624, 24],
+      "id": "c4ff773b-4142-4fb2-b921-f8b4b27c9811",
+      "name": "Simulate Enriched Data"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are a lead qualification expert. Analyze this lead and respond with ONLY a JSON object (no other text).\n\nLead Information:\n- Name: {{ $json['full name'] }}\n- Email: {{ $json.email }}\n- Company: {{ $json.company }}\n- Job Title: {{ $json.jobTitle }}\n- Company Size:{{ $json['company size'] }} employees\n- Industry: {{ $json.industry }}\n- Estimated Revenue: {{ $json.revenue }}\n- Email Quality Score: {{ $json.emailScore }}/100\n\nScoring Criteria:\n- Email validity: 0-20 points\n- Job title (decision maker): 0-25 points  \n- Company size (500+ is ideal): 0-25 points\n- Industry fit (Technology is best): 0-20 points\n- Revenue potential: 0-10 points\n\nReturn ONLY this JSON format:\n{\n  \"score\": <number 0-100>,\n  \"category\": \"<hot|warm|cold>\",\n  \"reasoning\": \"<one sentence why>\"\n}\n\nCategories:\n- hot: 70-100 points\n- warm: 40-69 points\n- cold: 0-39 points",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [848, 24],
+      "id": "ad047e1f-072b-47a0-9aa3-0a02114f4b76",
+      "name": "AI Agent - Lead Scorer"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-3.5-turbo",
+          "mode": "list",
+          "cachedResultName": "gpt-3.5-turbo"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [920, 248],
+      "id": "f1aa4980-1089-49d4-83a9-b08a37d3e287",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "YOUR_OPENAI_CREDENTIAL_ID",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Get the AI response\nconst aiOutput = items[0].json.output;\n\n// Parse the JSON string into an object\nconst aiData = JSON.parse(aiOutput);\n\n// Return the data merged with existing lead info\nreturn items.map(item => ({\n  json: {\n    ...item.json,\n    leadScore: aiData.score,\n    leadCategory: aiData.category,\n    scoreReasoning: aiData.reasoning\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 24],
+      "id": "ee97dabc-7abf-420f-ad67-a33a0bcec2e8",
+      "name": "Parse AI Response"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.leadCategory }}",
+                    "rightValue": "hot",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "12f25114-b490-42af-ba79-893fc65068eb"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "hot"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "eac06982-f25f-4ce5-bb85-a7dbdb96f4f7",
+                    "leftValue": "={{ $json.leadCategory }}",
+                    "rightValue": "warm",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "warm"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "37043bff-6a96-4b47-8947-f143d207c0fd",
+                    "leftValue": "={{ $json.leadCategory }}",
+                    "rightValue": "cold",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cold"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [1424, -96],
+      "id": "821c6c70-cb5c-4675-81e1-c44f791bf54b",
+      "name": "Route by Lead Category"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "YOUR_SLACK_CHANNEL_ID",
+          "mode": "list",
+          "cachedResultName": "hot-leads"
+        },
+        "text": "=🔥 *HOT LEAD ALERT!*\n\n*Name:* {{ $('Edit Fields').item.json['full name'] }}\n*Company:* {{ $('Edit Fields').item.json.company }}\n*Job Title:* {{ $('Simulate Enriched Data').item.json.jobTitle }}\n*Industry:* {{ $('Simulate Enriched Data').item.json.industry }}\n*Email:* {{ $('Simulate Enriched Data').item.json.email }}\n\n*Lead Score:* {{ $json.leadScore }}/100\n*Category:* {{ $json.leadCategory }}\n\n*Why Hot?*\n{{ $json.scoreReasoning }}\n\n*Source:* {{ $('Edit Fields').item.json.source }}\n\n⚡ *Action needed:* Reach out within 1 hour!",
+        "otherOptions": {}
+      },
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.4,
+      "position": [1648, -272],
+      "id": "22bd920a-e8a6-42c7-9927-b30a52923c46",
+      "name": "Slack Notification - Hot Lead",
+      "webhookId": "SLACK_WEBHOOK_PLACEHOLDER",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "YOUR_SLACK_CREDENTIAL_ID",
+          "name": "Slack account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Simulate Enriched Data').item.json.email }}",
+        "subject": "={{ $('Edit Fields').item.json['full name'] }}, thought you'd find this interesting",
+        "message": "=Hi {{ $('Edit Fields').item.json['full name'] }},\n\nI noticed you're {{ $('Simulate Enriched Data').item.json.jobTitle }} at {{ $('Simulate Enriched Data').item.json.company }}.\n\nI've been helping companies in {{ $('Simulate Enriched Data').item.json.industry }} with [YOUR SOLUTION]. Given {{ $('Simulate Enriched Data').item.json.company }}'s size ({{ $('Simulate Enriched Data').item.json['company size'] }} employees), I think we could add value.\n\nOpen to a quick 15-min call next week?\n\nBest,\n[YOUR NAME]\n[YOUR COMPANY]\n[YOUR EMAIL]",
+        "options": {
+          "appendAttribution": false,
+          "bccList": "your-email@example.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1648, -80],
+      "id": "c51cc022-7932-4872-83eb-27ebd233bc2c",
+      "name": "Email - Hot Lead Personalized",
+      "webhookId": "GMAIL_WEBHOOK_PLACEHOLDER",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.email }}",
+        "subject": "=Quick question, {{ $json['full name'] }}",
+        "message": "=Hi {{ $json['full name'] }},\n\nI came across {{ $json.company }} and wanted to reach out quickly.\n\nIs [YOUR PRODUCT CATEGORY] something your team is currently looking into?\n\nIf so, I'd be happy to share a quick case study of how we helped a similar {{ $json.industry }} company.\n\nIf not - totally fine! Just let me know and I won't bother you again.\n\nCheers,\n[YOUR NAME]\n[YOUR COMPANY]\n[YOUR EMAIL]",
+        "options": {
+          "bccList": "your-email@example.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1648, 112],
+      "id": "fbca1af2-8676-4587-87cf-29539c51b253",
+      "name": "Email - Warm Lead Inquiry",
+      "webhookId": "GMAIL_WEBHOOK_PLACEHOLDER_2",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Simulate Enriched Data').item.json.email }}",
+        "subject": "={{ $json['full name'] }} - let's talk this week?",
+        "message": "=Hi {{ $('Simulate Enriched Data').item.json['full name'] }},\n\nI noticed you're {{ $('Simulate Enriched Data').item.json.jobTitle }} at {{ $('Simulate Enriched Data').item.json.company }} - that's exactly the profile we love working with!\n\nGiven {{ $('Simulate Enriched Data').item.json.company }}'s size ({{ $('Simulate Enriched Data').item.json['company size'] }} employees) and your position in {{ $('Simulate Enriched Data').item.json.industry }}, I think we could create some serious impact together.\n\nRather than going back and forth with emails, let's just jump on a quick 15-minute call this week.\n\nPick whatever time works for you:\n👉 [YOUR CALENDLY LINK]\n\nI'll come prepared with:\n✅ Specific ideas for {{ $('Simulate Enriched Data').item.json.company }}\n✅ ROI breakdown for your industry\n✅ Case study from a similar company\n\nNo pitch, no pressure - just value.\n\nSee you soon!\n[YOUR NAME]\n[YOUR TITLE]\n[YOUR COMPANY]\n[YOUR PHONE]\n[YOUR EMAIL]",
+        "options": {
+          "appendAttribution": false,
+          "bccList": "your-email@example.com"
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [1872, -272],
+      "id": "d51908dc-928c-45a7-9e38-41d93cd352ae",
+      "name": "Email - Hot Lead Calendly",
+      "webhookId": "GMAIL_WEBHOOK_PLACEHOLDER_3",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "YOUR_GMAIL_CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "YOUR_GOOGLE_SHEET_ID",
+          "mode": "list",
+          "cachedResultName": "Lead Database"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Name": "={{ $('Simulate Enriched Data').item.json['full name'] }}",
+            "Email": "={{ $('Simulate Enriched Data').item.json.email }}",
+            "Company": "={{ $('Simulate Enriched Data').item.json.company }}",
+            "Phone": "='{{ $('Edit Fields').item.json.phone }}",
+            "Captured Date": "={{ $('Edit Fields').item.json.capturedAT }}",
+            "Status": "={{ $('Edit Fields').item.json.status }}",
+            "Source": "={{ $('Edit Fields').item.json.source }}",
+            "Company Size": "={{ $('Simulate Enriched Data').item.json['company size'] }}",
+            "Job Title": "={{ $('Simulate Enriched Data').item.json.jobTitle }}",
+            "Industry": "={{ $('Simulate Enriched Data').item.json.industry }}",
+            "Revenue": "={{ $('Simulate Enriched Data').item.json.revenue }}",
+            "Email Score": "={{ $('Simulate Enriched Data').item.json.emailScore }}",
+            "Lead Score": "={{ $json.leadScore }}",
+            "Lead Category": "={{ $json.leadCategory }}",
+            "Reasoning": "={{ $json.scoreReasoning }}",
+            "Lead ID": "={{ $execution.id }}"
+          },
+          "matchingColumns": ["Lead ID"]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [1424, 128],
+      "id": "f7723347-53a2-4d18-b036-08348608b582",
+      "name": "Save to Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "YOUR_GOOGLE_SHEETS_CREDENTIAL_ID",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [[{"node": "Edit Fields", "type": "main", "index": 0}]]
+    },
+    "Edit Fields": {
+      "main": [[{"node": "HTTP Request - Email Verification", "type": "main", "index": 0}]]
+    },
+    "HTTP Request - Email Verification": {
+      "main": [[{"node": "Simulate Enriched Data", "type": "main", "index": 0}]]
+    },
+    "Simulate Enriched Data": {
+      "main": [[{"node": "AI Agent - Lead Scorer", "type": "main", "index": 0}]]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [[{"node": "AI Agent - Lead Scorer", "type": "ai_languageModel", "index": 0}]]
+    },
+    "AI Agent - Lead Scorer": {
+      "main": [[{"node": "Parse AI Response", "type": "main", "index": 0}]]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {"node": "Route by Lead Category", "type": "main", "index": 0},
+          {"node": "Save to Google Sheets", "type": "main", "index": 0}
+        ]
+      ]
+    },
+    "Route by Lead Category": {
+      "main": [
+        [{"node": "Slack Notification - Hot Lead", "type": "main", "index": 0}],
+        [{"node": "Email - Hot Lead Personalized", "type": "main", "index": 0}],
+        [{"node": "Email - Warm Lead Inquiry", "type": "main", "index": 0}]
+      ]
+    },
+    "Slack Notification - Hot Lead": {
+      "main": [[{"node": "Email - Hot Lead Calendly", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "availableInMCP": false
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "INSTANCE_ID_REMOVED_FOR_SECURITY"
+  },
+  "tags": []
+}
