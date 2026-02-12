@@ -1,0 +1,431 @@
+{
+  "name": "Invoice Management System",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "authentication": "airtableTokenApi",
+        "baseId": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "id"
+        },
+        "tableId": {
+          "__rl": true,
+          "value": "YOUR_PROJECTS_TABLE_ID",
+          "mode": "id"
+        },
+        "triggerField": "Status",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.airtableTrigger",
+      "typeVersion": 1,
+      "position": [
+        -816,
+        -352
+      ],
+      "id": "e9a31e94-5c49-40b8-a263-7cdf9e3dc4d3",
+      "name": "project ready",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Invoice Database"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_CLIENTS_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "clients"
+        },
+        "id": "={{ $json.fields.Client[0] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -528,
+        -352
+      ],
+      "id": "a2592920-2223-4994-863a-2d40c25e02ea",
+      "name": "Get client info",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Access the trigger node data by referencing the first node\nconst triggerData = $(\"project ready\").first().json;\nconst project = triggerData.fields;\n\n// Access current node input (Airtable client data)\nconst client = $input.first().json;\n\nlet amount = 0;\nlet description = project.Desciption || 'Professional services';\n\n// Calculate amount\nif (project['Project type'] === 'Hourly') {\n  const hours = project['Hours worked'] || 0;\n  const rate = project.Rate || client['Default rate'] || 0;\n  amount = hours * rate;\n  description = `${description}\\n\\n${hours} hours @ $${rate}/hr`;\n  \n} else if (project['Project type'] === 'Fixed Price') {\n  amount = project['Fixed amount'] || 0;\n}\n\n// Generate invoice number\nconst year = new Date().getFullYear();\nconst random = Math.floor(Math.random() * 900000) + 100000;\nconst invoiceNumber = `INV-${year}-${random}`;\n\n// Calculate dates\nconst issueDate = new Date();\nconst dueDate = new Date(issueDate);\nconst paymentTerms = client['Payment terms'] || 'Net 30';\n\nif (paymentTerms === 'Net 15') dueDate.setDate(dueDate.getDate() + 15);\nelse if (paymentTerms === 'Net 30') dueDate.setDate(dueDate.getDate() + 30);\nelse if (paymentTerms === 'Net 45') dueDate.setDate(dueDate.getDate() + 45);\n\nconst formatDate = (d) => d.toISOString().split('T')[0];\n\nreturn {\n  invoiceNumber,\n  clientName: client['Client name'],\n  clientEmail: client.Email,\n  clientAddress: client.Address || '',\n  clientCompany: client.Company || '',\n  amount,\n  description,\n  issueDate: formatDate(issueDate),\n  dueDate: formatDate(dueDate),\n  paymentTerms,\n  projectId: triggerData.id,\n  projectName: project['Project name'],\n  clientId: client.id\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        -352
+      ],
+      "id": "f769f97b-7bfe-4d23-81f9-67084a06f237",
+      "name": "calculate invoice"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Invoice Database"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_INVOICES_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Invoices"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.invoiceNumber }}",
+            "Invoice Number": "={{ $json.invoiceNumber }}",
+            "Project": "=[\"{{ $json.projectId }}\"]",
+            "Amount": "={{ $json.amount }}",
+            "Due date": "={{ $json.dueDate }}",
+            "Status": "Sent",
+            "Client": "=[\"{{ $json.clientId }}\"]",
+            "Issue Date": "={{ $json.issueDate }}"
+          },
+          "matchingColumns": [
+            "id"
+          ]
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        48,
+        -352
+      ],
+      "id": "69c5f9bb-db44-4a8a-a41b-d489b300ad4f",
+      "name": "save invoice record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "documentType": "html",
+        "htmlCode": "=<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"utf-8\">\n  <style>\n    body { font-family: Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; }\n    .header { display: flex; justify-content: space-between; margin-bottom: 40px; }\n    .invoice-title { font-size: 32px; font-weight: bold; color: #333; }\n    .invoice-number { color: #666; }\n    .section { margin: 30px 0; }\n    .label { font-weight: bold; color: #333; }\n    table { width: 100%; border-collapse: collapse; margin: 20px 0; }\n    th { background: #f5f5f5; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; }\n    td { padding: 12px; border-bottom: 1px solid #eee; }\n    .total { font-size: 20px; font-weight: bold; text-align: right; margin-top: 20px; }\n    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #eee; color: #666; font-size: 14px; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <div>\n      <div class=\"invoice-title\">INVOICE</div>\n      <div class=\"invoice-number\">{{ $json.invoiceNumber }}</div>\n    </div>\n    <div style=\"text-align: right;\">\n      <div class=\"label\">Issue Date</div>\n      <div>{{ $json.issueDate }}</div>\n      <div class=\"label\" style=\"margin-top: 10px;\">Due Date</div>\n      <div>{{ $json.dueDate }}</div>\n    </div>\n  </div>\n\n  <div class=\"section\">\n    <div class=\"label\">Bill To:</div>\n    <div>{{ $json.clientName }}</div>\n    <div>{{ $json.clientCompany }}</div>\n    <div>{{ $json.clientEmail }}</div>\n  </div>\n\n  <table>\n    <thead>\n      <tr>\n        <th>Description</th>\n        <th>Project</th>\n        <th style=\"text-align: right;\">Amount</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr>\n        <td>{{ $json.description }}</td>\n        <td>{{ $json.projectName }}</td>\n        <td style=\"text-align: right;\">${{ $json.amount }}</td>\n      </tr>\n    </tbody>\n  </table>\n\n  <div class=\"total\">\n    Total Due: ${{ $json.amount }}\n  </div>\n\n  <div class=\"footer\">\n    <div>Payment Terms: {{ $json.paymentTerms }}</div>\n    <div style=\"margin-top: 10px;\">Thank you for your business!</div>\n  </div>\n</body>\n</html>",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.generatePdf",
+      "typeVersion": 1,
+      "position": [
+        336,
+        -352
+      ],
+      "id": "c6b2f7c4-8e21-4e9a-b8e5-2c4e5f3d6a7b",
+      "name": "Generate invoice"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('calculate invoice').item.json.clientEmail }}",
+        "subject": "=Invoice {{ $('calculate invoice').item.json.invoiceNumber }} from Your Company",
+        "message": "=Hi {{ $('calculate invoice').item.json.clientName }},\n\nThank you for your business! Please find attached invoice {{ $('calculate invoice').item.json.invoiceNumber }} for {{ $('calculate invoice').item.json.projectName }}.\n\nAmount Due: ${{ $('calculate invoice').item.json.amount }}\nDue Date: {{ $('calculate invoice').item.json.dueDate }}\n\nPlease let me know if you have any questions.\n\nBest regards",
+        "options": {
+          "attachments": "data",
+          "fileName": "={{ $('calculate invoice').item.json.invoiceNumber }}.pdf",
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        624,
+        -352
+      ],
+      "id": "8f9e5c6d-7a8b-4c9a-b1d2-3e4f5a6b7c8d",
+      "name": "Email to client",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CREDENTIAL_ID",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Invoice Database"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_PROJECTS_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Projects"
+        },
+        "id": "={{ $('calculate invoice').item.json.projectId }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Invoiced"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        864,
+        -352
+      ],
+      "id": "7ed3df9e-1809-42ea-8616-6f5e48329741",
+      "name": "Mark project invoiced",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -800,
+        -64
+      ],
+      "id": "b703cede-b846-498e-aa57-29e55b6e1ee7",
+      "name": "Daily 9am check"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Invoice Database"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_INVOICES_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Invoices"
+        },
+        "filterByFormula": "AND({Status} = \"Sent\", IS_BEFORE({Due date}, TODAY()))",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -480,
+        -64
+      ],
+      "id": "4b1f6fb7-3078-4a30-88c1-7407cdd56866",
+      "name": "Find overdue invoices",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=🚨 *OVERDUE INVOICE ALERT*\n\nInvoice: {{ $('Find overdue invoices').item.json['Invoice Number'] }}\nClient: {{ $json[\"Client name\"] }}\nAmount: ${{ $('Find overdue invoices').item.json.Amount }}\nDue Date: {{ $('Find overdue invoices').item.json['Due date'] }}\n\nEmail: {{ $json.Email }}\n\n⚡ Action needed: Follow up with client!",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        192,
+        -64
+      ],
+      "id": "ce2299b2-4b09-45ca-b278-0094250c7b3d",
+      "name": "Send telegram alert",
+      "credentials": {
+        "telegramApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Telegram account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Invoice Database"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_CLIENTS_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "clients"
+        },
+        "id": "={{ $json.Client[0] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -144,
+        -64
+      ],
+      "id": "dfa11d7f-3872-4bc7-9a1d-fce1261e7fbb",
+      "name": "Get client details",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "Airtable Personal Access Token account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "project ready": {
+      "main": [
+        [
+          {
+            "node": "Get client info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get client info": {
+      "main": [
+        [
+          {
+            "node": "calculate invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "calculate invoice": {
+      "main": [
+        [
+          {
+            "node": "save invoice record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "save invoice record": {
+      "main": [
+        [
+          {
+            "node": "Generate invoice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate invoice": {
+      "main": [
+        [
+          {
+            "node": "Email to client",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email to client": {
+      "main": [
+        [
+          {
+            "node": "Mark project invoiced",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 9am check": {
+      "main": [
+        [
+          {
+            "node": "Find overdue invoices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find overdue invoices": {
+      "main": [
+        [
+          {
+            "node": "Get client details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get client details": {
+      "main": [
+        [
+          {
+            "node": "Send telegram alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  }
+}
