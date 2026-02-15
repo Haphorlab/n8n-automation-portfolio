@@ -1,0 +1,989 @@
+{
+  "name": "Content discovery pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -912,
+        -1104
+      ],
+      "id": "5273cbfc-e6a9-4397-a0a2-b30beef5f1df",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "url": "https://commercialobserver.com/feed/",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        -656,
+        -1104
+      ],
+      "id": "0f86b333-7529-470c-9e97-920a4242e36a",
+      "name": "commercial observer"
+    },
+    {
+      "parameters": {
+        "jsCode": "const allInputs = $input.all();\n\n// Separate RSS articles from Airtable articles\nconst newArticles = allInputs.filter(item => item.json.url || item.json.link);\nconst existingArticles = allInputs.filter(item => item.json.fields?.source_url);\n\n// Create set of existing URLs for fast lookup\nconst existingUrls = new Set(\n  existingArticles.map(item => item.json.fields.source_url)\n);\n\n// Filter out articles we've already seen\nconst uniqueNewArticles = newArticles.filter(item => {\n  const url = item.json.url || item.json.link;\n  return !existingUrls.has(url);\n});\n\n// If no new articles, stop here\nif (uniqueNewArticles.length === 0) {\n  return [];\n}\n\n// Format articles for next step\nreturn uniqueNewArticles.map(item => ({\n  json: {\n    source_url: item.json.url || item.json.link,\n    title: item.json.title,\n    original_content: item.json.content || item.json.description || item.json.summary || '',\n    source_name: item.json.creator || 'Commercial Observer',\n    discovered_date: new Date().toISOString()\n  }\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -192,
+        -992
+      ],
+      "id": "6138081f-c572-476c-aaba-7c7e883777e0",
+      "name": "Filter new articles only"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=Analyze this article and score its relevance to commercial real estate (0-100):\n\nTitle: {{ $json.title }}\nContent: {{ $json.original_content.substring(0, 1000) }}\nSource: {{ $json.source_name }}\n\nScore based on:\n- Commercial real estate focus (multifamily, retail, industrial, office, land)\n- Transaction details (sales, pricing, deals)\n- Market trends and data\n- Professional relevance\n\nReturn ONLY valid JSON (no markdown):\n{\n  \"score\": 85,\n  \"primary_asset_class\": \"Multifamily\",\n  \"geography\": \"Los Angeles\",\n  \"topics\": [\"acquisition\", \"pricing\"],\n  \"reasoning\": \"Brief why\"\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        32,
+        -992
+      ],
+      "id": "a5e2e2ff-5eff-4a84-a637-6f60122f931d",
+      "name": "AI relevance scorer",
+      "credentials": {
+        "openAiApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "openAiApi credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// OpenAI returns nested structure - extract the actual text\nlet aiResponse = '';\n\nif ($json.output && Array.isArray($json.output)) {\n  // Handle array output format\n  const firstOutput = $json.output[0];\n  if (firstOutput.content && Array.isArray(firstOutput.content)) {\n    aiResponse = firstOutput.content[0]?.text || '';\n  }\n} else {\n  // Fallback to simpler formats\n  aiResponse = $json.message?.content || $json.text || $json.output || '';\n}\n\n// Try to parse JSON from AI response\nlet scoreData;\ntry {\n  // Remove markdown code blocks if present\n  const cleanJson = aiResponse\n    .replace(/```json\\n?/g, '')\n    .replace(/```\\n?/g, '')\n    .trim();\n  \n  scoreData = JSON.parse(cleanJson);\n} catch (error) {\n  // If parsing fails, assign default low score\n  console.log('Failed to parse:', aiResponse);\n  scoreData = {\n    score: 0,\n    primary_asset_class: 'Unknown',\n    geography: 'Unknown',\n    topics: [],\n    reasoning: 'Failed to parse AI response: ' + aiResponse.substring(0, 100)\n  };\n}\n\n// Combine original article data with AI scoring\nreturn {\n  json: {\n    source_url: $('Filter new articles only').item.json.source_url,\n    title: $('Filter new articles only').item.json.title,\n    original_content: $('Filter new articles only').item.json.original_content,\n    source_name: $('Filter new articles only').item.json.source_name,\n    discovered_date: $('Filter new articles only').item.json.discovered_date,\n    \n    // AI scoring data\n    relevance_score: scoreData.score,\n    primary_asset_class: scoreData.primary_asset_class || 'Unknown',\n    geography: scoreData.geography || 'Unknown',\n    topics: JSON.stringify(scoreData.topics || []),\n    reasoning: scoreData.reasoning || 'No reasoning provided',\n    \n    // Status (lowercase!)\n    status: scoreData.score >= 70 ? 'pending' : 'skipped'\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        -992
+      ],
+      "id": "ce36cb3b-e9ed-4c98-b6dd-f855a6aa7547",
+      "name": "Parse AI Response"
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Your Airtable Base",
+          "cachedResultUrl": "YOUR_AIRTABLE_URL"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Articles",
+          "cachedResultUrl": "https://airtable.com/appC9PckXkiBxdJpm/tblfI4vXkcfONKLSs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "=",
+            "source_url": "={{ $json.source_url }}",
+            "title": "={{ $json.title }}",
+            "original_content": "={{ $json.original_content }}",
+            "discovered_date": "={{ $json.discovered_date }}",
+            "relevance_score": "={{ $json.relevance_score }}",
+            "status": "={{ $json.status }}",
+            "source_name": "={{ $json.source_name }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "article_id",
+              "displayName": "article_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "original_content",
+              "displayName": "original_content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "discovered_date",
+              "displayName": "discovered_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "relevance_score",
+              "displayName": "relevance_score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "pending",
+                  "value": "pending"
+                },
+                {
+                  "name": "published",
+                  "value": "published"
+                },
+                {
+                  "name": "skipped",
+                  "value": "skipped"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "wordpress_id",
+              "displayName": "wordpress_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        608,
+        -992
+      ],
+      "id": "48e9c3ad-4ea6-4d81-b660-0d4aebf7be55",
+      "name": "Save Scored Articles",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "airtableTokenApi credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 2
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -880,
+        -592
+      ],
+      "id": "1f95c545-c08e-4ab3-a25a-491fac8f46e7",
+      "name": "Publishing schedule"
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Your Airtable Base",
+          "cachedResultUrl": "YOUR_AIRTABLE_URL"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Articles",
+          "cachedResultUrl": "https://airtable.com/appC9PckXkiBxdJpm/tblfI4vXkcfONKLSs"
+        },
+        "filterByFormula": "{status} = 'pending'",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -656,
+        -592
+      ],
+      "id": "36f79f43-6b16-4fc3-9e8d-6ad58bd82d97",
+      "name": "Get pending articles",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "airtableTokenApi credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o",
+          "mode": "list",
+          "cachedResultName": "GPT-4O"
+        },
+        "responses": {
+          "values": [
+            {
+              "content": "=You are a commercial real estate analyst writing for industry professionals.\n\nSummarize this article in a professional, human-sounding way:\n\nTitle: {{ $json.title }}\nContent: {{ $json.original_content }}\nSource: {{ $json.source_name }}\nWrite a concise summary (200-250 words) that:\n- Highlights key transaction details (price, location, players)\n- Identifies market trends\n- Uses industry terminology correctly\n- Sounds like a human analyst, not AI\n\nAlso provide:\n- SEO meta description (155 characters max)\n- 3-5 relevant tags\n- Primary category (Multifamily/Retail/Office/Industrial/Mixed-Use)\n\nReturn ONLY valid JSON (no markdown):\n{\n  \"summary\": \"Full summary text here\",\n  \"meta_description\": \"SEO description\",\n  \"tags\": [\"tag1\", \"tag2\", \"tag3\"],\n  \"category\": \"Multifamily\"\n}"
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.1,
+      "position": [
+        -432,
+        -592
+      ],
+      "id": "6f1abd1a-9609-4ce3-88bf-42e3b2fd77fc",
+      "name": "Summarize Article",
+      "credentials": {
+        "openAiApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "openAiApi credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract AI response\nlet aiResponse = '';\n\nif ($json.output && Array.isArray($json.output)) {\n  const firstOutput = $json.output[0];\n  if (firstOutput.content && Array.isArray(firstOutput.content)) {\n    aiResponse = firstOutput.content[0]?.text || '';\n  }\n} else {\n  aiResponse = $json.message?.content || $json.text || $json.output || '';\n}\n\n// Parse JSON\nlet summaryData;\ntry {\n  const cleanJson = aiResponse\n    .replace(/```json\\n?/g, '')\n    .replace(/```\\n?/g, '')\n    .trim();\n  \n  summaryData = JSON.parse(cleanJson);\n} catch (error) {\n  summaryData = {\n    summary: aiResponse.substring(0, 250),\n    meta_description: aiResponse.substring(0, 155),\n    tags: ['commercial real estate'],\n    category: 'General'\n  };\n}\n\n// Get original article data - with fallbacks\nconst previousNode = $('Get pending articles').item.json;\nconst articleData = previousNode.fields || previousNode;\n\nreturn {\n  json: {\n    article_id: articleData.article_id || previousNode.id,\n    title: articleData.title || 'Untitled',\n    source_url: articleData.source_url || '',\n    summary: summaryData.summary,\n    meta_description: summaryData.meta_description,\n    tags: summaryData.tags,\n    category: summaryData.category,\n    original_content: articleData.original_content || ''\n  }\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -592
+      ],
+      "id": "fd098f59-ab52-416a-a0a2-aeba77ceb8ab",
+      "name": "Parse summary"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "05189c7d-79fd-4b89-9e40-52d68f1c8fda",
+              "name": "wordpress_title",
+              "value": "={{ $json.title }}",
+              "type": "string"
+            },
+            {
+              "id": "1fd53212-979a-4158-b617-295cb69ba815",
+              "name": "wordpress_content",
+              "value": "={{ $json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "9e067171-2928-46a9-b8f9-cc120a7a023b",
+              "name": "wordpress_excerpt",
+              "value": "={{ $json.meta_description }}",
+              "type": "string"
+            },
+            {
+              "id": "1e994135-7306-46f7-95f3-1c68424e0240",
+              "name": "wordpress_tags",
+              "value": "={{ $json.tags.join(', ') }}",
+              "type": "string"
+            },
+            {
+              "id": "841e3125-cd94-4009-a733-c99734614fae",
+              "name": "wordpress_category",
+              "value": "={{ $json.category }}",
+              "type": "string"
+            },
+            {
+              "id": "72148e01-5467-491a-8a9d-1463e263a882",
+              "name": "wordpress_status",
+              "value": "published",
+              "type": "string"
+            },
+            {
+              "id": "d5aad11a-b594-488d-b8b3-5458c715caff",
+              "name": "published_url",
+              "value": "=https://demo-site.com/posts/{{ $json.article_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        144,
+        -592
+      ],
+      "id": "bfc47884-9ec5-42b4-b9da-6fb3f49fa622",
+      "name": "Format WordPress Post"
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Your Airtable Base",
+          "cachedResultUrl": "YOUR_AIRTABLE_URL"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Articles",
+          "cachedResultUrl": "https://airtable.com/appC9PckXkiBxdJpm/tblfI4vXkcfONKLSs"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "published_date": "={{ $today }}",
+            "status": "published",
+            "id": "={{ $('Parse summary').item.json.article_id }}",
+            "relevance_score": 0
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": false
+            },
+            {
+              "id": "article_id",
+              "displayName": "article_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": true,
+              "removed": true
+            },
+            {
+              "id": "source_url",
+              "displayName": "source_url",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "original_content",
+              "displayName": "original_content",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "discovered_date",
+              "displayName": "discovered_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "relevance_score",
+              "displayName": "relevance_score",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "sending",
+                  "value": "sending"
+                },
+                {
+                  "name": "published",
+                  "value": "published"
+                },
+                {
+                  "name": "skipped",
+                  "value": "skipped"
+                },
+                {
+                  "name": "pending",
+                  "value": "pending"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "published_date",
+              "displayName": "published_date",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "wordpress_id",
+              "displayName": "wordpress_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source_name",
+              "displayName": "source_name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        368,
+        -592
+      ],
+      "id": "e4484815-0dd7-4f4c-be2d-de04379212f1",
+      "name": "Update record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "airtableTokenApi credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Your Airtable Base",
+          "cachedResultUrl": "YOUR_AIRTABLE_URL"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Logs",
+          "cachedResultUrl": "https://airtable.com/appC9PckXkiBxdJpm/tblmZ1yPsaU4iWl7J"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "timestamp": "={{ $now.toISO() }}",
+            "article_id": "={{ $json.fields.article_id }}",
+            "log_status": "success",
+            "details": "=Article discovered and scored: {{ $json.fields.title }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "timestamp",
+              "displayName": "timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "dateTime",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "article_id",
+              "displayName": "article_id",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "log_type",
+              "displayName": "log_type",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "error",
+                  "value": "error"
+                },
+                {
+                  "name": "success",
+                  "value": "success"
+                },
+                {
+                  "name": "warning",
+                  "value": "warning"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "log_status",
+              "displayName": "log_status",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "error",
+                  "value": "error"
+                },
+                {
+                  "name": "success",
+                  "value": "success"
+                },
+                {
+                  "name": "warning",
+                  "value": "warning"
+                },
+                {
+                  "name": "info",
+                  "value": "info"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "error_message",
+              "displayName": "error_message",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "details",
+              "displayName": "details",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        832,
+        -992
+      ],
+      "id": "dae97214-08e9-4640-b313-e1fe44aa6bc3",
+      "name": "Log success",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "airtableTokenApi credential"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "search",
+        "base": {
+          "__rl": true,
+          "value": "YOUR_AIRTABLE_BASE_ID",
+          "mode": "list",
+          "cachedResultName": "Your Airtable Base",
+          "cachedResultUrl": "YOUR_AIRTABLE_URL"
+        },
+        "table": {
+          "__rl": true,
+          "value": "YOUR_TABLE_ID",
+          "mode": "list",
+          "cachedResultName": "Articles",
+          "cachedResultUrl": "https://airtable.com/appC9PckXkiBxdJpm/tblfI4vXkcfONKLSs"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        -656,
+        -912
+      ],
+      "id": "087b0854-bfa4-4254-bf73-0193ad9afceb",
+      "name": "Get Existing Articles",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "CREDENTIAL_ID",
+          "name": "airtableTokenApi credential"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -400,
+        -992
+      ],
+      "id": "5d337bc2-0f00-46c1-a763-f2821b25b0c3",
+      "name": "Merge"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "commercial observer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "commercial observer": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter new articles only": {
+      "main": [
+        [
+          {
+            "node": "AI relevance scorer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI relevance scorer": {
+      "main": [
+        [
+          {
+            "node": "Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "Save Scored Articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Publishing schedule": {
+      "main": [
+        [
+          {
+            "node": "Get pending articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get pending articles": {
+      "main": [
+        [
+          {
+            "node": "Summarize Article",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Article": {
+      "main": [
+        [
+          {
+            "node": "Parse summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse summary": {
+      "main": [
+        [
+          {
+            "node": "Format WordPress Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format WordPress Post": {
+      "main": [
+        [
+          {
+            "node": "Update record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Scored Articles": {
+      "main": [
+        [
+          {
+            "node": "Log success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Existing Articles": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Filter new articles only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "d9f6c97a-e9a6-4bfe-8028-baac7c28d15f",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "EXAMPLE_INSTANCE_ID"
+  },
+  "id": "fZzsk9-FeYxRQYLRw3w8T",
+  "tags": []
+}
