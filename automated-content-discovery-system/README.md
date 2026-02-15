@@ -6,7 +6,7 @@ An intelligent, AI-powered content pipeline that automatically discovers, filter
 
 This automation solves a critical problem for content-driven businesses: **manually sourcing, evaluating, and publishing industry content is time-consuming and inconsistent.**
 
-This system runs 24/7, continuously monitoring RSS feeds, scoring content relevance with AI, and automatically publishing high-quality summaries—eliminating hours of manual work daily.
+This system runs 24/7, continuously monitoring RSS feeds, scoring content relevance with AI, and automatically publishing high-quality summaries eliminating hours of manual work daily.
 
 **Real-World Use Case:** Commercial real estate firms, news aggregators, industry blogs, and content marketing teams.
 
