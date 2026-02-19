@@ -1,0 +1,111 @@
+# RAG Chatbot with Webhook
+
+A retrieval augmented generation chatbot that answers questions based on your own documents. Drop a file into a Google Drive folder and the system automatically indexes it into Pinecone. Send a question to the webhook endpoint and it retrieves the most relevant content, passes it to GPT as grounded context, and returns a precise answer in real time.
+
+## How It Works
+
+The workflow runs two separate pipelines that share the same Pinecone vector store.
+
+The ingestion pipeline watches a Google Drive folder. The moment a new file lands there it downloads it automatically, converts the content into vector embeddings using OpenAI text-embedding-ada-002, and stores those vectors in Pinecone under a dedicated namespace. You never have to manually trigger the process. Every new document you drop into the folder gets indexed without touching n8n.
+
+The query pipeline starts at a POST webhook. A question arrives in the request body, gets embedded using the same ada-002 model so the vector space is consistent, and that embedding is used to query Pinecone for the top 5 most semantically similar chunks from your documents. Those chunks are assembled into a context block and handed to GPT-3.5 Turbo alongside the original question. GPT reads only what was retrieved from your documents and returns a grounded answer. The response is sent back immediately to whoever called the webhook.
+
+## Workflow Map
+
+```
+INGESTION PIPELINE
+
+Google Drive Trigger (watches folder every minute)
+      Download File (pulls binary content)
+            Pinecone Vector Store (inserts embeddings)
+                  Embeddings OpenAI ada-002 (sub node)
+                  Default Data Loader (sub node)
+
+QUERY PIPELINE
+
+Webhook  POST /chat
+      Extract Question (pulls question from request body)
+            OpenAI Create Embedding (embeds the question)
+                  Prepare Embedding (formats vector for Pinecone)
+                        Pinecone Query (topK 5 semantic search)
+                              Prepare Context (assembles retrieved chunks)
+                                    OpenAI Generate Answer (GPT-3.5 Turbo)
+                                          Respond to Webhook (returns JSON)
+```
+
+## Request and Response Format
+
+Send a POST request to your webhook URL with this body:
+
+```json
+{
+  "question": "What are the eligibility requirements?"
+}
+```
+
+The webhook responds with:
+
+```json
+{
+  "answer": "Based on the documents, eligibility requires...",
+  "question": "What are the eligibility requirements?"
+}
+```
+
+## Requirements
+
+Before you begin make sure you have the following ready:
+
+A running n8n instance either self hosted or on n8n cloud. A Google account with access to Google Drive. An OpenAI account with a funded API key that has access to text-embedding-ada-002 and gpt-3.5-turbo. A Pinecone account with an index already created. The index must use 1536 dimensions to match the ada-002 embedding size. Take note of your index name, namespace, and the host URL from your Pinecone dashboard before starting.
+
+## Setup
+
+### 1. Import the Workflow
+
+Open your n8n instance and click the menu in the top left corner. Select Import and choose the file `rag_chatbot_webhook.json`. The workflow will load with all nodes in place but credentials will show as unconnected. That is expected at this stage.
+
+### 2. Set Up Google Drive Credentials
+
+In n8n go to Settings then Credentials and click Add Credential. Search for Google Drive OAuth2 and follow the OAuth flow to connect your Google account. Once created, open the Google Drive Trigger node and select your new credential from the dropdown. Do the same for the Download File node as both nodes need the same Google Drive credential attached.
+
+### 3. Configure the Google Drive Trigger
+
+Inside the Google Drive Trigger node, change the folder to watch to the specific Google Drive folder where you will be dropping your documents. Copy the folder ID from the URL in your browser when you have the folder open. It is the long string after `/folders/` in the address bar. Paste it into the folder field in the node. The trigger is set to poll every minute so any new file uploaded will be picked up within 60 seconds.
+
+### 4. Set Up Your OpenAI Credential
+
+Go back to Credentials and create a new OpenAI credential. Paste your OpenAI API key into the API key field and save it. Now connect this credential to three nodes: the Embeddings OpenAI node in the ingestion pipeline, the OpenAI Create Embedding node in the query pipeline, and the OpenAI Generate Answer node. Click each node, open the credential dropdown, and select your OpenAI credential.
+
+### 5. Set Up Your Pinecone Credential
+
+Create another credential in n8n, this time for Pinecone. Paste your Pinecone API key into the field and save it. Connect this credential to both the Pinecone Vector Store node and the Pinecone Query node.
+
+### 6. Configure the Pinecone Vector Store Node
+
+Open the Pinecone Vector Store node and set the index name to match the index you created in your Pinecone dashboard. Set the namespace to whatever label you want to group your documents under. Using a clear name like `faq` or `docs` keeps things organized if you plan to have multiple namespaces later.
+
+### 7. Configure the Pinecone Query Node
+
+Open the Pinecone Query node. Update the URL field to your Pinecone index host URL. You can find this on your Pinecone dashboard under the index details. It looks something like `https://your-index-name.svc.environment.pinecone.io`. Also confirm the namespace in the request body matches what you set in the Pinecone Vector Store node. The topK value is set to 5 which means it will retrieve the 5 most relevant chunks. You can increase this if your documents are long and you need more context.
+
+### 8. Customize the System Prompt
+
+Open the OpenAI Generate Answer node and look at the JSON body. Find the system message content field. Replace the placeholder organization name with your actual business or project name and adjust the tone or instructions to match how you want the assistant to behave. This is what controls the personality and boundaries of the chatbot.
+
+### 9. Activate and Test Ingestion
+
+Click the Activate toggle at the top of the workflow canvas to turn it on. Now go to your watched Google Drive folder and upload a PDF or text document. Wait up to 60 seconds for the trigger to fire. You can check the execution log in n8n to confirm the ingestion pipeline ran successfully and vectors were inserted into Pinecone. Log into your Pinecone dashboard and check the vector count on your index to confirm documents are coming through.
+
+### 10. Test the Query Pipeline
+
+With at least one document indexed, copy the webhook URL from the Webhook node. It will look like `https://your-n8n-domain/webhook/chat`. Use Postman, Insomnia, or a simple curl command to send a POST request with a JSON body containing a question related to the content in your document. If everything is connected correctly you will receive a JSON response with the answer field populated.
+
+```bash
+curl -X POST https://your-n8n-domain/webhook/chat \
+  -H "Content-Type: application/json" \
+  -d '{"question": "What does the document say about pricing?"}'
+```
+
+## Extending the Bot
+
+To change the assistant behavior, edit the system prompt in the OpenAI Generate Answer node. To retrieve more document chunks per query, raise the topK value in the Pinecone Query node. To support more file types beyond the default loader, swap the Default Data Loader node for a more specific one like the PDF loader or text splitter available in n8n's LangChain nodes. To add conversation memory, you can introduce a window buffer memory node between the context preparation and answer generation steps.
