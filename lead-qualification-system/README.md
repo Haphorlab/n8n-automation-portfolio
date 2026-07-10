@@ -124,10 +124,8 @@ Email                  Check                        Cold
 
 ## 📬 Contact
 
-**Afolabi Kolawole**
-- 📧 afolabikolawole759@gmail.com
-- 💼 [LinkedIn](#)
-- 🌐 [Portfolio](#)
+**Aliyah Williams**
+- 📧 aliyahw209@gmail.com
 
 ---
 
