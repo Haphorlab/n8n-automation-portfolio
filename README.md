@@ -1,4 +1,4 @@
-# n8n Automation Portfolio
+# Automation Portfolio
 
 Professional automation workflows built with n8n - Production-ready systems for business process automation.
 
@@ -91,7 +91,7 @@ These workflows demonstrate production-grade automation capabilities including:
 
 ## 📧 Contact
 
-**Afolabi Kolawole** - Automation Specialist
+**Aliyah Williams** - Automation Specialist
 
 Open to freelance automation projects and consulting.
 
