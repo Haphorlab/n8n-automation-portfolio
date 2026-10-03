@@ -421,7 +421,7 @@ MIT License - free to use and modify for your projects.
 
 ## 🙋 Questions?
 
-**Built by Aliyah Williams** - Automation Specialist
+**Built by Stevelyn Daphne Williams** - Automation Specialist
 
 - GitHub: [@Haphorlab](https://github.com/Haphorlab)
 - Portfolio: [n8n Automation Projects](https://github.com/Haphorlab/n8n-automation-portfolio)
