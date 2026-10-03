@@ -91,7 +91,7 @@ These workflows demonstrate production-grade automation capabilities including:
 
 ## 📧 Contact
 
-**Aliyah Williams.  GMail- aliyahw209@gmail.com** - Automation Specialist
+**Stevelyn Williams.  GMail- wstevelyn@gmail.com** - Automation Specialist
 
 Open to freelance automation projects and consulting.
 
