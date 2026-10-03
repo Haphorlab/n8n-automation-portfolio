@@ -124,9 +124,9 @@ Email                  Check                        Cold
 
 ## 📬 Contact
 
-**Aliyah Williams**
-- 📧 aliyahw209@gmail.com
+**Stevelyn Daphne Williams**
+- 📧 wstevelyn@gmail.com
 
 ---
 
-*Last updated: January 2026*
+*Last updated: October 2026*
