@@ -124,8 +124,8 @@ Email                  Check                        Cold
 
 ## 📬 Contact
 
-**Aliyah M Williams**
-- 📧 lilimakayla850@gmail.com
+**Stevelyn Williams**
+- 📧 wstevelyn@gmail.com
 
 ---
 
